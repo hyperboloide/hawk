@@ -13,13 +13,13 @@ var (
 	nonces = map[string]bool{}
 )
 
-// You will need to provider functions:
+// You will need 2 provider functions:
 
 // 1. A function that fetch a *hawk.Credentials by it's id.
 // if nothing is found the result should be nil and it's
 // an authentication error. If an error append (an external
 // problem like db connection), return the error and it
-// will be set as the context error.
+// will be set as the gin context error.
 func getCredentials(id string) (*hawk.Credentials, error) {
 	res, _ := creds[id]
 	return &res, nil
@@ -42,7 +42,7 @@ func main() {
 	// Create a new Middleware with your providers
 	middleware := hawk.NewMiddleware(getCredentials, setNonce)
 
-	// Optionally change the user param name in the context.
+	// Optionally change the user param name in the gin context.
 	// Default is "user" and if empty then the user is not set.
 	middleware.UserParam = "hawk-user"
 
