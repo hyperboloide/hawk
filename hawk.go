@@ -11,25 +11,55 @@ import (
 	hawk "github.com/tent/hawk-go"
 )
 
+// ErrNotFound is set in context.Err if the GetCredentialFunc
+// returns nil
 var ErrNotFound = errors.New("Credentials not found")
 
+// Credentials is used to store a key string and a User object.
+// It is returned by a function of type GetCredentialFunc.
 type Credentials struct {
 	Key  string
 	User interface{}
 }
 
-type CredentialGetFunc func(id string) (*Credentials, error)
+// GetCredentialFunc is a function that returns a *Credentials by id.
+// If nothing is found the result should be nil and it's
+// an authentication error (set in context).
+// If an error occured (an external problem like db connection),
+// return the error and it will be set as the context error.
+type GetCredentialFunc func(id string) (*Credentials, error)
 
-type HawkMiddleWare struct {
-	GetCredentials      func(id string) (*Credentials, error)
-	SetNonce            func(id string, nonce string, t time.Time) (bool, error)
-	UserParam           string
-	UnauthorizedHandler func(*gin.Context, error)
-	ErrorHandler        func(*gin.Context, error)
-	Ext                 string
+// SetNonceFunc is a function that returns false if nonce with the same
+// associated id and time already exists. Otherwise true is returned
+// an the nonce should be save to avoid replay problems.
+type SetNonceFunc func(id string, nonce string, t time.Time) (bool, error)
+
+// Middleware is the middleware object.
+// GetCredentials is the GetCredentialFunc
+// SetNonce is the SetNonceFunc
+// UserParam if set will set the user in the context with a matching key
+// Ext add an "ext" header in the request
+type Middleware struct {
+	GetCredentials GetCredentialFunc
+	SetNonce       SetNonceFunc
+	UserParam      string
+	Ext            string
 }
 
-func (hm *HawkMiddleWare) BlockRequest(c *gin.Context, err error, auth *hawk.Auth) {
+// NewMiddleware creates a new Middleware with the GetCredentials
+// and SetNonce params set. UserParam is set to "user" by default.
+func NewMiddleware(gcf GetCredentialFunc, snf SetNonceFunc) *Middleware {
+	return &Middleware{
+		GetCredentials: gcf,
+		SetNonce:       snf,
+		UserParam:      "user",
+	}
+}
+
+// Abortequest aborts the request and set the context error and status.
+// When possible it will attempt to send a "Server-Authorization" header.
+func (hm *Middleware) Abortequest(c *gin.Context, err error, auth *hawk.Auth) {
+
 	switch err {
 	case hawk.ErrBewitExpired,
 		hawk.ErrInvalidBewitMethod,
@@ -41,34 +71,25 @@ func (hm *HawkMiddleWare) BlockRequest(c *gin.Context, err error, auth *hawk.Aut
 		if auth != nil {
 			c.Header("Server-Authorization", auth.ResponseHeader(hm.Ext))
 		}
-		if hm.UnauthorizedHandler != nil {
-			hm.UnauthorizedHandler(c, err)
-		} else {
-			c.String(http.StatusUnauthorized, err.Error())
-		}
+		_ = c.AbortWithError(http.StatusUnauthorized, err)
 	default:
-		if hm.ErrorHandler != nil {
-			hm.ErrorHandler(c, err)
-		} else {
-			c.String(
-				http.StatusInternalServerError,
-				http.StatusText(http.StatusInternalServerError))
-		}
+		_ = c.AbortWithError(http.StatusInternalServerError, err)
 	}
 }
 
-func (hm *HawkMiddleWare) Filter(c *gin.Context) {
-	res := &HawkRequest{
+// Filter is the middleware function that validate the hawk authentication.
+func (hm *Middleware) Filter(c *gin.Context) {
+	res := &Request{
 		Hawk: hm,
 	}
 
 	auth, err := hawk.NewAuthFromRequest(c.Request, res.CredentialsLookup, res.NonceCheck)
 	if res.Error != nil {
-		hm.BlockRequest(c, res.Error, nil)
+		hm.Abortequest(c, res.Error, nil)
 	} else if err != nil {
-		hm.BlockRequest(c, err, auth)
+		hm.Abortequest(c, err, auth)
 	} else if err := auth.Valid(); err != nil {
-		hm.BlockRequest(c, err, auth)
+		hm.Abortequest(c, err, auth)
 	} else {
 		c.Header("Server-Authorization", auth.ResponseHeader(hm.Ext))
 		c.Set("hawk", auth)
@@ -79,16 +100,18 @@ func (hm *HawkMiddleWare) Filter(c *gin.Context) {
 	}
 }
 
-type HawkRequest struct {
-	Hawk  *HawkMiddleWare
+// Request represent the state of a request.
+type Request struct {
+	Hawk  *Middleware
 	ID    string
 	User  interface{}
-	key   string
 	Ok    bool
 	Error error
 }
 
-func (hr *HawkRequest) CredentialsLookup(creds *hawk.Credentials) error {
+// CredentialsLookup lookup the credantial for hawk-go from the user
+// provided GetCredentialFunc.
+func (hr *Request) CredentialsLookup(creds *hawk.Credentials) error {
 
 	id := creds.ID
 	if res, err := hr.Hawk.GetCredentials(id); err != nil {
@@ -105,19 +128,21 @@ func (hr *HawkRequest) CredentialsLookup(creds *hawk.Credentials) error {
 	}
 }
 
-func (hr *HawkRequest) NonceCheck(nonce string, t time.Time, creds *hawk.Credentials) bool {
-	if hr.Error != nil || !hr.Ok {
+// NonceCheck call the SetNonceFunc on behalf of hawk-go.
+func (hr *Request) NonceCheck(nonce string, t time.Time, creds *hawk.Credentials) bool {
+	if hr.Error != nil || !hr.Ok || hr.Hawk.SetNonce == nil {
 		return false
-	} else if hr.Hawk.SetNonce == nil {
-		return true
-	} else if res, err := hr.Hawk.SetNonce(creds.ID, nonce, t); err != nil {
+	}
+
+	ok, err := hr.Hawk.SetNonce(creds.ID, nonce, t)
+	if err != nil {
 		hr.Error = err
 		return false
-	} else {
-		return res
 	}
+	return ok
 }
 
+// GenIDKey generates a random id and key.
 func GenIDKey() (string, string) {
 	return uniuri.NewLen(12), uniuri.NewLen(24)
 }

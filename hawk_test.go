@@ -51,19 +51,13 @@ var _ = Describe("Hawk", func() {
 		return !exists, nil
 	}
 
-	Context("HawkRequest", func() {
-		var hr *HawkRequest
-		var hm *HawkMiddleWare
+	Context("Request", func() {
+		var hr *Request
+		var hm *Middleware
 
 		BeforeEach(func() {
-			hm = &HawkMiddleWare{
-				GetCredentials: getCredentials,
-				SetNonce:       setNonces,
-				UserParam:      "user",
-				Ext:            "test-hawk",
-			}
-
-			hr = &HawkRequest{
+			hm = NewMiddleware(getCredentials, setNonces)
+			hr = &Request{
 				Hawk: hm,
 			}
 		})
@@ -91,7 +85,7 @@ var _ = Describe("Hawk", func() {
 				Expect(hr.User).To(BeNil())
 			})
 
-			It("returns nil and set HawkRequest if ok", func() {
+			It("returns nil and set Request if ok", func() {
 				hc := &hawk.Credentials{
 					ID: "valid-id",
 				}
@@ -139,9 +133,9 @@ var _ = Describe("Hawk", func() {
 
 	})
 
-	Context("HawkMiddleWare", func() {
+	Context("Middleware", func() {
 		var ts *httptest.Server
-		var hm *HawkMiddleWare
+		var hm *Middleware
 		var credentials *hawk.Credentials
 
 		BeforeEach(func() {
@@ -150,13 +144,7 @@ var _ = Describe("Hawk", func() {
 				Key:  "test-cred-key",
 				Hash: sha256.New,
 			}
-
-			hm = &HawkMiddleWare{
-				GetCredentials: getCredentials,
-				SetNonce:       setNonces,
-				UserParam:      "user",
-			}
-
+			hm = NewMiddleware(getCredentials, setNonces)
 			router := gin.New()
 			router.Any("/private", hm.Filter, func(c *gin.Context) {
 				c.String(200, "ok")
@@ -230,7 +218,7 @@ var _ = Describe("Hawk", func() {
 			Expect(resp.StatusCode).To(Equal(401))
 		})
 
-		It("no header no bewit", func() {
+		It("no header and no bewit either", func() {
 			req, err := http.NewRequest("GET", ts.URL+"/private", nil)
 			client := &http.Client{}
 			resp, err := client.Do(req)
