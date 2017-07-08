@@ -106,16 +106,16 @@ func (hr *HawkRequest) CredentialsLookup(creds *hawk.Credentials) error {
 }
 
 func (hr *HawkRequest) NonceCheck(nonce string, t time.Time, creds *hawk.Credentials) bool {
-	if hr.Error != nil || !hr.Ok || hr.Hawk.SetNonce == nil {
+	if hr.Error != nil || !hr.Ok {
 		return false
-	}
-
-	ok, err := hr.Hawk.SetNonce(creds.ID, nonce, t)
-	if err != nil {
+	} else if hr.Hawk.SetNonce == nil {
+		return true
+	} else if res, err := hr.Hawk.SetNonce(creds.ID, nonce, t); err != nil {
 		hr.Error = err
 		return false
+	} else {
+		return res
 	}
-	return ok
 }
 
 func GenIDKey() (string, string) {

@@ -14,4 +14,4 @@ install:
   - go get github.com/dchest/uniuri
   - go get github.com/tent/hawk-go
 
-script: ginkgo -r --randomizeSuites --race --trace --cover && go tool cover -func=coverage.out
+script: ginkgo --randomizeSuites --race --trace
