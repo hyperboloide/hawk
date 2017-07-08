@@ -1,0 +1,17 @@
+language: go
+
+go:
+  - 1.6
+  - 1.7
+  - 1.8
+  - tip
+
+install:
+  - export PATH=$GOPATH/bin:$PATH
+  - go get github.com/onsi/ginkgo/ginkgo
+  - go get github.com/onsi/gomega
+  - go get github.com/gin-gonic/gin
+  - go get github.com/dchest/uniuri
+  - go get github.com/tent/hawk-go
+
+script: ginkgo -r --randomizeSuites --race --trace --cover && go tool cover -func=coverage.out
