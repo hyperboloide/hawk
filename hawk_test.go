@@ -3,6 +3,7 @@ package hawk_test
 import (
 	"crypto/sha256"
 	"errors"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"time"
@@ -224,6 +225,26 @@ var _ = Describe("Hawk", func() {
 			resp, err := client.Do(req)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(401))
+		})
+
+		It("use custom AbortHandler", func() {
+			hm.AbortHandler = func(c *gin.Context, err error) {
+				defer GinkgoRecover()
+				Expect(ISHawkError(err)).To(BeTrue())
+				c.String(418, "abort handler")
+			}
+
+			req, err := http.NewRequest("GET", ts.URL+"/private", nil)
+			auth := hawk.NewRequestAuth(req, credentials, -time.Hour)
+			bw := auth.Bewit()
+			resp, err := http.Get(ts.URL + "/private?bewit=" + bw)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(resp.StatusCode).To(Equal(418))
+			header := resp.Header["Server-Authorization"][0]
+			Expect(auth.ValidResponse(header)).ToNot(HaveOccurred())
+			b, err := ioutil.ReadAll(resp.Body)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(string(b[:])).To(Equal("abort handler"))
 		})
 
 	})

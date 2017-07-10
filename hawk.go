@@ -11,6 +11,11 @@ import (
 	hawk "github.com/tent/hawk-go"
 )
 
+const (
+	AuthKey = "hawk_auth"
+	UserKey = "hawk_user"
+)
+
 // ErrNotFound is set in context.Err if the GetCredentialFunc
 // returns nil
 var ErrNotFound = errors.New("Credentials not found")
@@ -34,6 +39,8 @@ type GetCredentialFunc func(id string) (*Credentials, error)
 // an the nonce should be save to avoid replay problems.
 type SetNonceFunc func(id string, nonce string, t time.Time) (bool, error)
 
+type AbortHandlerFunc func(*gin.Context, error)
+
 // Middleware is the middleware object.
 // GetCredentials is the GetCredentialFunc
 // SetNonce is the SetNonceFunc
@@ -42,6 +49,7 @@ type SetNonceFunc func(id string, nonce string, t time.Time) (bool, error)
 type Middleware struct {
 	GetCredentials GetCredentialFunc
 	SetNonce       SetNonceFunc
+	AbortHandler   AbortHandlerFunc
 	UserParam      string
 	Ext            string
 }
@@ -52,14 +60,10 @@ func NewMiddleware(gcf GetCredentialFunc, snf SetNonceFunc) *Middleware {
 	return &Middleware{
 		GetCredentials: gcf,
 		SetNonce:       snf,
-		UserParam:      "user",
 	}
 }
 
-// Abortequest aborts the request and set the context error and status.
-// When possible it will attempt to send a "Server-Authorization" header.
-func (hm *Middleware) Abortequest(c *gin.Context, err error, auth *hawk.Auth) {
-
+func ISHawkError(err error) bool {
 	switch err {
 	case hawk.ErrBewitExpired,
 		hawk.ErrInvalidBewitMethod,
@@ -68,12 +72,25 @@ func (hm *Middleware) Abortequest(c *gin.Context, err error, auth *hawk.Auth) {
 		hawk.ErrNoAuth,
 		hawk.ErrReplay,
 		hawk.ErrTimestampSkew:
-		if auth != nil {
-			c.Header("Server-Authorization", auth.ResponseHeader(hm.Ext))
-		}
-		_ = c.AbortWithError(http.StatusUnauthorized, err)
-	default:
-		_ = c.AbortWithError(http.StatusInternalServerError, err)
+		return true
+	}
+	return false
+}
+
+// Abortequest aborts the request and set the context error and status.
+// When possible it will attempt to send a "Server-Authorization" header.
+func (hm *Middleware) Abortequest(c *gin.Context, err error, auth *hawk.Auth) {
+	isHawk := ISHawkError(err)
+	if isHawk && auth != nil {
+		c.Header("Server-Authorization", auth.ResponseHeader(hm.Ext))
+	}
+	if hm.AbortHandler != nil {
+		hm.AbortHandler(c, err)
+		c.Abort()
+	} else if isHawk {
+		c.AbortWithError(http.StatusUnauthorized, err)
+	} else {
+		c.AbortWithError(http.StatusInternalServerError, err)
 	}
 }
 
@@ -92,10 +109,8 @@ func (hm *Middleware) Filter(c *gin.Context) {
 		hm.Abortequest(c, err, auth)
 	} else {
 		c.Header("Server-Authorization", auth.ResponseHeader(hm.Ext))
-		c.Set("hawk", auth)
-		if hm.UserParam != "" {
-			c.Set(hm.UserParam, res.User)
-		}
+		c.Set(AuthKey, auth)
+		c.Set(UserKey, res.User)
 		c.Next()
 	}
 }
