@@ -65,7 +65,8 @@ func NewMiddleware(gcf GetCredentialFunc, snf SetNonceFunc) *Middleware {
 
 func ISHawkError(err error) bool {
 	switch err {
-	case hawk.ErrBewitExpired,
+	case ErrNotFound,
+		hawk.ErrBewitExpired,
 		hawk.ErrInvalidBewitMethod,
 		hawk.ErrInvalidMAC,
 		hawk.ErrMissingServerAuth,
