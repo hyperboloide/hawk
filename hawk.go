@@ -169,7 +169,7 @@ func GetAuth(c *gin.Context) *hawk.Auth {
 	return c.MustGet(AuthKey).(*hawk.Auth)
 }
 
-// GetHawk returns the user object (obtain with the GetCredentialFunc) from
+// GetUser returns the user object (obtain with the GetCredentialFunc) from
 // the context. Will panic if not set (i.e. when the filter fail or
 // has not happend yet)
 func GetUser(c *gin.Context) interface{} {
