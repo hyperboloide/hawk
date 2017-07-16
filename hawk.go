@@ -162,3 +162,16 @@ func (hr *Request) NonceCheck(nonce string, t time.Time, creds *hawk.Credentials
 func GenIDKey() (string, string) {
 	return uniuri.NewLen(12), uniuri.NewLen(24)
 }
+
+// GetAuth returns the *hawk.Auth from the context.
+// Will panic if not set (i.e. when the filter fail or has not happend yet)
+func GetAuth(c *gin.Context) *hawk.Auth {
+	return c.MustGet(AuthKey).(*hawk.Auth)
+}
+
+// GetHawk returns the user object (obtain with the GetCredentialFunc) from
+// the context. Will panic if not set (i.e. when the filter fail or
+// has not happend yet)
+func GetUser(c *gin.Context) interface{} {
+	return c.MustGet(UserKey)
+}
